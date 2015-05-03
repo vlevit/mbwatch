@@ -20,6 +20,8 @@ class IMAPTimeout(Exception):
 
 
 def _mesg(s, secs=None):
+    if ' LOGIN ' in s:          # do not log passwords
+        s = s[:s.find(' LOGIN ') + 11] + '...'
     logger.debug(s)
 
 
