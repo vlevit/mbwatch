@@ -38,7 +38,7 @@ def _send(con, data):
 def _recv(imap):
     try:
         resp = imap._get_line().rstrip()
-    except ssl.SSLError as e:
+    except (socket.error, ssl.SSLError) as e:
         if "timed out" in e.args[0]:
             raise IMAPTimeout
         raise
