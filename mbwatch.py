@@ -4,9 +4,11 @@ from collections import defaultdict
 from imaplib import IMAP4
 import logging
 import subprocess
+import socket
 import time
 import os
 import sys
+import ssl
 try:
     import queue
 except ImportError:
@@ -17,7 +19,7 @@ from .arguments import get_arguments, print_help, print_version
 from .channels import (get_channels, get_syncmap, iterate_stores,
                        populate_stores_w_mailboxes, ChannelError, MailboxError)
 from .config import read_config, ConfigError
-from .imapidle import ConnectionPool, watch
+from .imapidle import ConnectionPool, IMAPTimeout, watch
 from .util import PasswordError
 
 
@@ -56,11 +58,26 @@ def get_watch_callback(tasks, stname, mailbox, path):
     return callback
 
 
-def watch_errors(con, mailbox, callback, tasks):
-    try:
-        watch(con, mailbox, callback)
-    except Exception as exc:
-        tasks.put_nowait(ErrorTask(exc, exc_info=sys.exc_info()))
+def watch_errors(makecon, mailbox, callback, tasks):
+
+    def errortask(e):
+        tasks.put_nowait(ErrorTask(e, exc_info=sys.exc_info()))
+
+    con = None
+    while True:
+        try:
+            con = makecon(con)
+            watch(con, mailbox, callback)
+        except (ssl.SSLError, socket.error, IMAP4.abort, IMAPTimeout) as e:
+            logger.debug(e)
+            if con and isinstance(e, con.abort) and 'EOF' not in e.args[0]:
+                errortask(e)
+                break
+            logger.debug('sleep before reconnecting')
+            time.sleep(30)
+        except Exception as e:
+            errortask(e)
+            break
 
 
 def watch_local(tasks, period=60):
@@ -74,11 +91,19 @@ def start_watching(tasks, syncmap, stores, cpool, period=60):
     for stname, box, path in syncmap:
         store = stores[stname]
         if 'imapstore' in store:
-            con = cpool.get_or_create_connection(
-                store['host'], store['user'],
-                store['pass'], store.get('useimaps', False))
+
+            def makecon(con, store=store):
+                if con:
+                    logger.debug('trying to reconnect')
+                    return cpool.reconnect(con, store['pass'])
+                else:
+                    return cpool.get_or_create_connection(
+                        store['host'], store['user'],
+                        store['pass'], store.get('useimaps', False))
+
             callback = get_watch_callback(tasks, stname, box, path)
-            t = Thread(target=watch_errors, args=(con, path, callback, tasks))
+            t = Thread(target=watch_errors,
+                       args=(makecon, path, callback, tasks))
             t.daemon = True
             t.start()
     # run a single thread tracking all maildir changes
