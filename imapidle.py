@@ -3,6 +3,7 @@ import logging
 import imaplib
 import socket
 import ssl
+from threading import RLock
 
 
 logger = logging.getLogger(__name__)
@@ -104,30 +105,38 @@ class ConnectionPool:
 
     def __init__(self, debug=False):
         self.debug = 4 if debug else 0
+        self.lock = RLock()
 
     def get_or_create_connection(self, host, user, password, imaps=True):
         port = imaplib.IMAP4_SSL_PORT if imaps else imaplib.IMAP4_PORT
         key = (host, port, user)
-        if self._released.get(key):
-            imap = self._released[key].pop()
-            self._busy[key].append(imap)
-            return imap
-        if imaps:
-            imap = imaplib.IMAP4_SSL(host, port)
-        else:
-            imap = imaplib.IMAP4(host, port)
-        imap.debug = self.debug
-        imap._mesg = _mesg
-        if not imaps and hasattr(imap, 'starttls'):
-            imap.starttls()
-        imap.login(user, password)
-        self._busy[key].append(imap)
-        self._con_key_map[imap] = key
+        # get free connection if available
+        with self.lock:
+            if self._released.get(key):
+                imap = self._released[key].pop()
+                self._busy[key].append(imap)
+                return imap
+        # otherwise create new
+        imap = self._connect(host, port, user, password, imaps)
+        self._add_connection(imap, key)
+        return imap
+
+    def reconnect(self, con, password):
+        key = self._con_key_map[con]
+        host, port, user = key
+        imap = self._connect(host, port, user, password)
+        with self.lock:
+            self._add_connection(imap, key)
+            self._remove_connection(con)
         return imap
 
     def release(self, con):
-        key = self._con_key_map[con]
-        self._released[key].append(self._busy[key].pop())
+        with self.lock:
+            key = self._con_key_map[con]
+            self._released[key].append(self._busy[key].pop())
+
+    def count(self):
+        return len(self._con_key_map)
 
     def close(self, con):
         # avoid long locks in case of errors
@@ -138,11 +147,34 @@ class ConnectionPool:
             con.logout()
         except (imaplib.IMAP4.error, socket.error, OSError) as e:
             logger.error("error on shutting down the connection %s ", e)
-        key = self._con_key_map[con]
-        self._released.pop(key, None)
-        self._busy.pop(key, None)
-        del self._con_key_map[con]
+        self._remove_connection(con)
 
     def close_all(self):
         for con in list(self._con_key_map):
             self.close(con)
+
+    def _connect(self, host, port, user, password, imaps=True):
+        if imaps:
+            imap = imaplib.IMAP4_SSL(host, port)
+        else:
+            imap = imaplib.IMAP4(host, port)
+        imap.debug = self.debug
+        imap._mesg = _mesg
+        if not imaps and hasattr(imap, 'starttls'):
+            imap.starttls()
+        imap.login(user, password)
+        return imap
+
+    def _add_connection(self, con, key):
+        with self.lock:
+            self._busy[key].append(con)
+            self._con_key_map[con] = key
+
+    def _remove_connection(self, con):
+        with self.lock:
+            key = self._con_key_map[con]
+            if con in self._released[key]:
+                self._released[key].remove(con)
+            elif con in self._busy[key]:
+                self._busy[key].remove(con)
+            del self._con_key_map[con]
