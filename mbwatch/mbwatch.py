@@ -115,16 +115,16 @@ def start_watching(tasks, syncmap, stores, cpool, period=60):
     t.start()
 
 
-def run_sync_command(command, mailboxes, flags=[]):
+def run_sync_command(command, mailboxes):
     """Sync. mailboxes is a dict {channel: [box1, box2, ...]}."""
     args = [ch + (':' + ','.join(boxes) if boxes else '')
             for ch, boxes in mailboxes.items()]
-    logger.info(' '.join([command] + flags + args))
-    subprocess.check_call([command] + flags + args)
+    logger.info(' '.join([command] + args))
+    subprocess.check_call([command] + args)
     logger.debug("command completed")
 
 
-def task_loop(tasks, syncmap, channels, stores, command, flags=[]):
+def task_loop(tasks, syncmap, channels, stores, command):
     dircache = {}
     while True:
 
@@ -161,7 +161,7 @@ def task_loop(tasks, syncmap, channels, stores, command, flags=[]):
                     mailboxes[ch].append(box)
                 else:
                     mailboxes[ch] = []
-            run_sync_command(command, mailboxes, flags)
+            run_sync_command(command, mailboxes)
 
             # update parts of dircache
             for st, box, path in task.syncpairs:
@@ -231,7 +231,7 @@ def main():
         syncall = make_sync_all_task(syncmap, stores)
         tasks.put_nowait(syncall)
 
-        task_loop(tasks, syncmap, channels, stores, args.command, args.flags)
+        task_loop(tasks, syncmap, channels, stores, args.command)
 
     except (IMAP4.error, PasswordError, MailboxError,
             subprocess.CalledProcessError, KeyboardInterrupt) as e:

@@ -42,7 +42,6 @@ class Arguments:
     version = False
     help = False
     error = None
-    flags = []
 
 
 def get_arguments():
@@ -67,13 +66,10 @@ def get_arguments():
             skip = True
         elif arg in ('-D', '--debug'):
             args.debug = True
-            args.flags.append(arg)
         elif arg in ('-V', '--verbose'):
             args.verbose = True
-            args.flags.append(arg)
         elif arg in ('-q', '--quiet'):
             args.quiet = True
-            args.flags.append(arg)
         elif arg in ('-v', '--version'):
             args.version = True
         elif arg in ('-h', '--help'):
