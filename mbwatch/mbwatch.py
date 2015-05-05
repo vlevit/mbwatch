@@ -119,8 +119,14 @@ def run_sync_command(command, mailboxes):
     """Sync. mailboxes is a dict {channel: [box1, box2, ...]}."""
     args = [ch + (':' + ','.join(boxes) if boxes else '')
             for ch, boxes in mailboxes.items()]
-    logger.info(' '.join([command] + args))
-    subprocess.check_call([command] + args)
+    if ' ' in command:
+        shell = True
+        command = ' '.join([command] + ["'%s'" % arg for arg in args])
+    else:
+        shell = False
+        command = [command] + args
+    logger.info(command if shell else ' '.join(command))
+    subprocess.check_call(command, shell=shell)
     logger.debug("command completed")
 
 
