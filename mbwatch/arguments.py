@@ -23,7 +23,7 @@ usage:
   -c, --config CONFIG   read an alternate config file (default: ~/.mbsyncrc)
   -D, --debug           print debugging messages
   -V, --verbose         verbose mode (display network traffic)
-  -q, --quiet           don't display progress info
+  -q, --quiet           print only errors
   -v, --version         display version
   -h, --help            display this help message
 
