@@ -155,7 +155,7 @@ def get_syncmap(channels):
                     if sbox not in store['mailboxes']:
                         raise MailboxError("mailbox '%s' not found in "
                                            "store '%s'" % (box, stname))
-                    path = get_store_box(sbox, store)
+                    path = get_box_path(sbox, store)
                     pairs[box].append((stname, box, path))
             elif 'regexps' in channel:
                 for sbox in store['mailboxes']:
