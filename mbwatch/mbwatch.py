@@ -101,8 +101,8 @@ def start_watching(tasks, syncmap, stores, cpool, period=60):
                     return cpool.reconnect(con, store['pass'])
                 else:
                     return cpool.get_or_create_connection(
-                        store['host'], store['user'],
-                        store['pass'], store.get('useimaps', False))
+                        store['host'], store['user'], store['pass'],
+                        store['port'], store['ssltype'])
 
             callback = get_watch_callback(tasks, stname, box, path)
             t = Thread(target=watch_errors,

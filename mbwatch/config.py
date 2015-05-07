@@ -64,9 +64,22 @@ def _read_config(file):
     return config
 
 
+def _post_process_config(config):
+    for _, store in config.get('imapstore', {}).items():
+        if 'ssltype' not in store:
+            if 'useimaps' in store:
+                store['ssltype'] = 'IMAPS'
+            else:
+                # we do not support unencrypted connections
+                store['ssltype'] = 'STARTTLS'
+        if 'port' not in store:
+            store['port'] = 143 if store['ssltype'] == 'STARTTLS' else 993
+    return config
+
+
 def read_config(path="~/.mbsyncrc"):
     try:
         with open(os.path.expanduser(path)) as file:
-            return _read_config(file)
+            return _post_process_config(_read_config(file))
     except IOError as e:
         raise ConfigError(e)

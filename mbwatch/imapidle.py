@@ -97,6 +97,35 @@ def watch(con, mailbox, callback):
     con.logout()
 
 
+def starttls(con, ssl_context=None):
+    """Python3's imaplib starttls port for Python2."""
+    name = 'STARTTLS'
+    if getattr(con, '_tls_established', False):
+        raise con.abort('TLS session already established')
+    print(con.capabilities)
+    if name not in con.capabilities:
+        raise con.abort('TLS not supported by server')
+    # Generate a default SSL context if none was passed.
+    if ssl_context is None:
+        ssl_context = ssl._create_stdlib_context()
+    tag = con._new_tag()
+    _send(con, '%s %s' % (tag, name))
+    token = None
+    while token != tag:
+        token, resp, text = _recv(con)
+    if resp == 'OK':
+        con.sock = ssl_context.wrap_socket(con.sock, server_hostname=con.host)
+        con.file = con.sock.makefile('rb')
+        con._tls_established = True
+        # update capabilities
+        typ, dat = con.capability()
+        if dat == [None]:
+            raise con.error('no CAPABILITY response from server')
+        con.capabilities = tuple(dat[-1].upper().split())
+    else:
+        raise con.error("Couldn't establish TLS session")
+
+
 class ConnectionPool:
 
     _busy = defaultdict(list)
@@ -107,8 +136,8 @@ class ConnectionPool:
         self.debug = 4 if debug else 0
         self.lock = RLock()
 
-    def get_or_create_connection(self, host, user, password, imaps=True):
-        port = imaplib.IMAP4_SSL_PORT if imaps else imaplib.IMAP4_PORT
+    def get_or_create_connection(self, host, user, password, port=143,
+                                 ssltype='STARTTLS'):
         key = (host, port, user)
         # get free connection if available
         with self.lock:
@@ -117,7 +146,7 @@ class ConnectionPool:
                 self._busy[key].append(imap)
                 return imap
         # otherwise create new
-        imap = self._connect(host, port, user, password, imaps)
+        imap = self._connect(host, port, user, password, ssltype)
         self._add_connection(imap, key)
         return imap
 
@@ -153,15 +182,18 @@ class ConnectionPool:
         for con in list(self._con_key_map):
             self.close(con)
 
-    def _connect(self, host, port, user, password, imaps=True):
-        if imaps:
-            imap = imaplib.IMAP4_SSL(host, port)
-        else:
+    def _connect(self, host, port, user, password, ssltype):
+        if ssltype == 'STARTTLS':
             imap = imaplib.IMAP4(host, port)
+        else:
+            imap = imaplib.IMAP4_SSL(host, port)
         imap.debug = self.debug
         imap._mesg = _mesg
-        if not imaps and hasattr(imap, 'starttls'):
-            imap.starttls()
+        if ssltype == 'STARTTLS':
+            if hasattr(imap, 'starttls'):
+                imap.starttls()
+            else:
+                starttls(imap)
         imap.login(user, password)
         return imap
 
