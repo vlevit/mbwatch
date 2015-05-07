@@ -52,7 +52,10 @@ def _read_config(file):
             current[option] = config[typ][sname]
             current[option + '_box'] = box
         elif option == 'patterns':
-            current[option] = values
+            if option in current:
+                current[option].extend(values)
+            else:
+                current[option] = values
         elif option == 'group':
             config['group'][values[0]] = values[1:]
         else:
