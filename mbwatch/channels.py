@@ -5,7 +5,7 @@ import re
 import logging
 
 from .util import get_password
-
+from .six import s
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +73,7 @@ def populate_stores_w_mailboxes(stores, cpool):
                 store['port'], store['ssltype'])
             try:
                 ns = con.namespace()
-                m = ns_re.match(ns[1][0])
+                m = ns_re.match(s(ns[1][0]))
                 if m:
                     prefix, delim = m.group('prefix'), m.group('delim')
                     delim = store.get('pathdelimiter', delim)
@@ -84,7 +84,7 @@ def populate_stores_w_mailboxes(stores, cpool):
                 logger.warning('namespace command failed: %s', e)
                 store.setdefault('path', '')
             resp = con.list()
-            for box in (b.decode() for b in resp[1]):
+            for box in (s(b) for b in resp[1]):
                 m = box_re.match(box)
                 if not m:
                     cpool.release(con)  # REMOVE

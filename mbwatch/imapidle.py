@@ -5,6 +5,7 @@ import socket
 import ssl
 from threading import RLock
 
+from .six import s
 
 logger = logging.getLogger(__name__)
 logger.propagate = False
@@ -30,7 +31,7 @@ def _send(con, data):
     log = con._mesg if con.debug >= 4 else con._log
     log('> ' + data)
     try:
-        con.send(data + '\r\n')
+        con.send((data + '\r\n').encode('ascii'))
     except (socket.error, OSError) as val:
         raise con.abort('socket error: %s' % val)
 
@@ -42,7 +43,7 @@ def _recv(imap):
         if "timed out" in e.args[0]:
             raise IMAPTimeout
         raise
-    parts = resp.split(None, 2)
+    parts = s(resp).split(None, 2)
     if len(parts) < 2:
         raise imap.abort('unexpected response: %s' % resp)
     return parts[0], parts[1], parts[2] if len(parts) > 2 else ''
@@ -88,7 +89,7 @@ def idle(con, timeout=29*60):
 
 def watch(con, mailbox, callback):
     if 'IDLE' in con.capabilities:
-        con.select(mailbox, True)
+        con.select(con._quote(mailbox), True)
         for m in idle(con):
             callback()
         con.close()
