@@ -70,7 +70,7 @@ def populate_stores_w_mailboxes(stores, cpool):
             store['pass'] = passwd
             con = cpool.get_or_create_connection(
                 store['host'], store['user'], passwd,
-                store.get('useimaps', False))
+                store['port'], store['ssltype'])
             try:
                 ns = con.namespace()
                 m = ns_re.match(ns[1][0])
