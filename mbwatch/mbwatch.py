@@ -98,7 +98,8 @@ def start_watching(tasks, syncmap, stores, cpool, period=60):
             def makecon(con, store=store):
                 if con:
                     logger.debug('trying to reconnect')
-                    return cpool.reconnect(con, store['pass'])
+                    return cpool.reconnect(
+                        con, store['pass'], store['ssltype'])
                 else:
                     return cpool.get_or_create_connection(
                         store['host'], store['user'], store['pass'],

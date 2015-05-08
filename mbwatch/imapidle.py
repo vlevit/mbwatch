@@ -151,10 +151,10 @@ class ConnectionPool:
         self._add_connection(imap, key)
         return imap
 
-    def reconnect(self, con, password):
+    def reconnect(self, con, password, ssltype):
         key = self._con_key_map[con]
         host, port, user = key
-        imap = self._connect(host, port, user, password)
+        imap = self._connect(host, port, user, password, ssltype)
         with self.lock:
             self._add_connection(imap, key)
             self._remove_connection(con)
