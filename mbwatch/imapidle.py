@@ -5,7 +5,7 @@ import socket
 import ssl
 from threading import RLock
 
-from .six import s
+from .six import b, s
 
 logger = logging.getLogger(__name__)
 logger.propagate = False
@@ -31,7 +31,7 @@ def _send(con, data):
     log = con._mesg if con.debug >= 4 else con._log
     log('> ' + data)
     try:
-        con.send((data + '\r\n').encode('ascii'))
+        con.send(b(data + '\r\n'))
     except (socket.error, OSError) as val:
         raise con.abort('socket error: %s' % val)
 
