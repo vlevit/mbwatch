@@ -5,7 +5,7 @@ import socket
 import ssl
 from threading import RLock
 
-from .six import b, s
+from .six import b, s, PY3
 
 logger = logging.getLogger(__name__)
 logger.propagate = False
@@ -21,10 +21,11 @@ class IMAPTimeout(Exception):
     pass
 
 
-def _mesg(s, secs=None):
-    if ' LOGIN ' in s:          # do not log passwords
-        s = s[:s.find(' LOGIN ') + 11] + '...'
-    logger.debug(s)
+def _mesg(dat, secs=None):
+    dat = s(dat) if isinstance(dat, bytes) else dat
+    if ' LOGIN ' in dat:          # do not log passwords
+        dat = dat[:dat.find(' LOGIN ') + 11] + '...'
+    logger.debug(dat)
 
 
 def _send(con, data):
@@ -36,23 +37,29 @@ def _send(con, data):
         raise con.abort('socket error: %s' % val)
 
 
-def _recv(imap):
+def _recv(con):
     try:
-        resp = imap._get_line().rstrip()
-    except (socket.error, ssl.SSLError) as e:
+        resp = s(con._get_line()).rstrip()
+    except (socket.timeout, socket.error, ssl.SSLError) as e:
         if "timed out" in e.args[0]:
-            raise IMAPTimeout
+            # Socket files are not readable after timeout occurred.
+            # https://bugs.python.org/issue7322
+            # Should we use select/epoll/gevent for long polling instead of
+            # socket timeouts?
+            if PY3:
+                con.file = con.sock.makefile('rb')
+            raise IMAPTimeout(e.args[0])
         raise
-    parts = s(resp).split(None, 2)
+    parts = resp.split(None, 2)
     if len(parts) < 2:
-        raise imap.abort('unexpected response: %s' % resp)
+        raise con.abort('unexpected response: %s' % resp)
     return parts[0], parts[1], parts[2] if len(parts) > 2 else ''
 
 
 def idle(con, timeout=29*60):
     con.sock.settimeout(timeout)
     while True:
-        tag = con._new_tag()
+        tag = s(con._new_tag())
         _send(con, '%s %s' % (tag, 'IDLE'))
         con.idling = True
         token = None
