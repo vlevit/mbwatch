@@ -1,4 +1,5 @@
 from collections import defaultdict
+from functools import wraps
 import logging
 import imaplib
 import socket
@@ -21,6 +22,33 @@ class IMAPTimeout(Exception):
     pass
 
 
+class StopIdle(Exception):
+    pass
+
+
+def idle_terminate(f):
+    """
+    If connection is terminating receive data from the connection
+    in a loop and raise StopIdle when socket is closed. Expect the
+    first argument to be an IMAP connection.
+
+    """
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        con = args[0]
+        if con.terminating:
+            try:
+                while _recv_simple(con):
+                    pass
+            except (socket.error, con.error) as e:
+                logger.debug('idle terminate: %s' % e)
+            raise StopIdle
+        else:
+            return f(*args, **kwargs)
+
+    return wrapper
+
+
 def _mesg(dat, secs=None):
     dat = s(dat) if isinstance(dat, bytes) else dat
     if ' LOGIN ' in dat:          # do not log passwords
@@ -28,7 +56,7 @@ def _mesg(dat, secs=None):
     logger.debug(dat)
 
 
-def _send(con, data):
+def _send_simple(con, data):
     log = con._mesg if con.debug >= 4 else con._log
     log('> ' + data)
     try:
@@ -37,7 +65,12 @@ def _send(con, data):
         raise con.abort('socket error: %s' % val)
 
 
-def _recv(con):
+@idle_terminate
+def _send(con, data):
+    return _send_simple(con, data)
+
+
+def _recv_simple(con):
     try:
         resp = s(con._get_line()).rstrip()
     except (socket.timeout, socket.error, ssl.SSLError) as e:
@@ -54,6 +87,18 @@ def _recv(con):
     if len(parts) < 2:
         raise con.abort('unexpected response: %s' % resp)
     return parts[0], parts[1], parts[2] if len(parts) > 2 else ''
+
+
+@idle_terminate
+def _recv(con):
+    return _recv_simple(con)
+
+
+def _logout(con):
+    """Send LOGOUT and shutdown, but don't try to receive any response."""
+    tag = s(con._new_tag())
+    _send_simple(con, '%s %s' % (tag, 'LOGOUT'))
+    con.shutdown()
 
 
 def idle(con, timeout=29*60):
@@ -97,12 +142,13 @@ def idle(con, timeout=29*60):
 def watch(con, mailbox, callback):
     if 'IDLE' in con.capabilities:
         con.select(con._quote(mailbox), True)
-        for m in idle(con):
-            callback()
-        con.close()
+        try:
+            for m in idle(con):
+                callback()
+        except StopIdle:
+            logger.debug("watch loop stopped")
     else:
-        raise con.abort('idle is not supported')
-    con.logout()
+        raise con.abort("idle is not supported")
 
 
 def starttls(con, ssl_context=None):
@@ -110,7 +156,6 @@ def starttls(con, ssl_context=None):
     name = 'STARTTLS'
     if getattr(con, '_tls_established', False):
         raise con.abort('TLS session already established')
-    print(con.capabilities)
     if name not in con.capabilities:
         raise con.abort('TLS not supported by server')
     # Generate a default SSL context if none was passed.
@@ -177,11 +222,12 @@ class ConnectionPool:
 
     def close(self, con):
         # avoid long locks in case of errors
+        con.terminating = True
         con.sock.settimeout(3)
         try:
-            if getattr(con, 'idling', False):
-                _send(con, 'DONE')
-            con.logout()
+            if con.idling:
+                _send_simple(con, 'DONE')
+            _logout(con)
         except (imaplib.IMAP4.error, socket.error, OSError) as e:
             logger.error("error on shutting down the connection %s ", e)
         self._remove_connection(con)
@@ -197,6 +243,8 @@ class ConnectionPool:
             imap = imaplib.IMAP4_SSL(host, port)
         imap.debug = self.debug
         imap._mesg = _mesg
+        imap.idling = False
+        imap.terminating = False
         if ssltype == 'STARTTLS':
             if hasattr(imap, 'starttls'):
                 imap.starttls()

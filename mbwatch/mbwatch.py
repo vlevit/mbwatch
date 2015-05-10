@@ -71,7 +71,11 @@ def watch_errors(makecon, mailbox, callback, tasks):
             connected = True
             watch(con, mailbox, callback)
         except (ssl.SSLError, socket.error, IMAP4.abort, IMAPTimeout) as e:
-            logger.error('%s: %s', type(e), e)
+            logger.log(logging.DEBUG if con.terminating else logging.ERROR,
+                       '%s: %s', type(e), e,
+                       exc_info=logger.isEnabledFor(logging.DEBUG))
+            if con.terminating:
+                break
             if con and isinstance(e, con.abort) and 'EOF' not in e.args[0]:
                 errortask(e)
                 break
@@ -81,6 +85,8 @@ def watch_errors(makecon, mailbox, callback, tasks):
         except Exception as e:
             errortask(e)
             break
+        else:
+            break               # watch was stopped
 
 
 def watch_local(tasks, period=60):
