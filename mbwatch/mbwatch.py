@@ -7,6 +7,7 @@ import subprocess
 import socket
 import time
 import os
+import signal
 import sys
 import ssl
 try:
@@ -231,6 +232,16 @@ def main():
     stores = dict(iterate_stores(channels))
     logger.debug("stores: %s", stores)
 
+    # handle signals
+    class Terminate(Exception):
+        pass
+
+    def signal_handler(signum, frame):
+        raise Terminate("signal %s" % signum)
+
+    signal.signal(signal.SIGTERM, signal_handler)
+    signal.signal(signal.SIGHUP, signal.SIG_IGN)
+
     cpool = ConnectionPool(debug=args.verbose)
     try:
         populate_stores_w_mailboxes(stores, cpool)
@@ -247,7 +258,7 @@ def main():
         task_loop(tasks, syncmap, channels, stores, args.command)
 
     except (IMAP4.error, PasswordError, MailboxError,
-            subprocess.CalledProcessError, KeyboardInterrupt) as e:
+            subprocess.CalledProcessError, KeyboardInterrupt, Terminate) as e:
         logger.error(e)
         raise SystemExit(1)
     finally:
