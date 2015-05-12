@@ -31,6 +31,8 @@ PY3 = sys.version_info[0] == 3
 
 
 if PY3:
+    string_types = str,
+
     def b(s):
         return s.encode('ascii')
 
@@ -41,6 +43,8 @@ if PY3:
         return b.decode('ascii')
 
 else:
+    string_types = basestring,
+
     def b(s):
         return s
     # Workaround for standalone backslash

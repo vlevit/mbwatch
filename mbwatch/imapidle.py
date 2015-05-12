@@ -6,7 +6,7 @@ import socket
 import ssl
 from threading import RLock
 
-from .six import b, s, PY3
+from .six import b, s, string_types, PY3
 
 logger = logging.getLogger(__name__)
 logger.propagate = False
@@ -73,12 +73,12 @@ def _send(con, data):
 def _recv_simple(con):
     try:
         resp = s(con._get_line()).rstrip()
-    except (socket.timeout, socket.error, ssl.SSLError) as e:
-        if "timed out" in e.args[0]:
+    except (socket.error, ssl.SSLError) as e:
+        if isinstance(e.args[0], string_types) and "timed out" in e.args[0]:
             # Socket files are not readable after timeout occurred.
             # https://bugs.python.org/issue7322
-            # Should we use select/epoll/gevent for long polling instead of
-            # socket timeouts?
+            # Should we use additional threads/gevent for long polling
+            # instead of socket timeouts?
             if PY3:
                 con.file = con.sock.makefile('rb')
             raise IMAPTimeout(e.args[0])
