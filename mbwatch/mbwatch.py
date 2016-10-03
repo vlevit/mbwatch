@@ -21,7 +21,7 @@ from .channels import (get_channels, get_syncmap, iterate_stores,
                        populate_stores_w_mailboxes, ChannelError, MailboxError)
 from .config import read_config, ConfigError
 from .imapidle import ConnectionPool, IMAPTimeout, watch
-from .util import PasswordError
+from .util import PasswordError, res_init
 
 
 logger = logging.getLogger(__name__)
@@ -80,6 +80,9 @@ def watch_errors(makecon, mailbox, callback, tasks):
             if con and isinstance(e, con.abort) and 'EOF' not in e.args[0]:
                 errortask(e)
                 break
+            if isinstance(e, socket.gaierror) and e.errno == socket.EAI_NONAME:
+                res = res_init()
+                logger.debug('res_init: %d', res)
             if not connected:
                 logger.debug('reconnect in 30s')
                 time.sleep(30)
